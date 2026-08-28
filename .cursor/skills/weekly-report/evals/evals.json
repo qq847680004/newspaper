@@ -1,0 +1,23 @@
+{
+  "skill_name": "weekly-report",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "根据 newspaper/daily/ 里本周的日报写一份周报，保存到 newspaper/weekly/ 对应月份目录。要能直接复制到企业微信。下周规划不用再问我，按你的建议直接写进最终周报。",
+      "expected_output": "项目根目录 newspaper/weekly/YYYY-MM/YYYY-MM-DD.md：按「本周总结 / 下周规划 / 本周感想」结构；合并日报、不按日期复述、不夸大；不含表格和复杂 Markdown；篇幅按约 500 字来写，可稍超，没有的内容不编。",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "帮我把这周日报整理成周报，日报在 newspaper/daily/。文件放到 newspaper/weekly/ 按月分目录。企业微信能直接贴。规划你定，我确认，直接出最终稿。",
+      "expected_output": "如实写需求和过程，培训按培训记录不包装成体系建设；过程与成果分开；无岗位自我介绍套话；格式符合企业微信粘贴要求。",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "写本周周报。日报在 newspaper/daily/，输出 newspaper/weekly/YYYY-MM/，要能贴企业微信。不要跟上周写重复。下周规划按你的建议直接写进最终稿，不用再确认。",
+      "expected_output": "聚焦本周实际产出，不把上周工作当成本周主成果；不复制历史周报句子；规划具体；格式与字数符合 skill 要求。",
+      "files": []
+    }
+  ]
+}

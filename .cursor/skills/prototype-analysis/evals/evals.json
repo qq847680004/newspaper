@@ -1,0 +1,23 @@
+{
+  "skill_name": "prototype-analysis",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "分析这个演示站的登录和下单流程：https://www.saucedemo.com/ 。按真实用户走一遍，从登录到把商品加购再结账。把分析文档写到 docs/analysis/，截图放到 docs/analysis/imgs/。",
+      "expected_output": "docs/analysis/ 下有 Markdown 分析文档，imgs/ 中有登录、商品列表、购物车、结账等关键状态截图；文档含页面功能、用户操作流程图、业务流程和开发分析依据；正文不含 HTML/DOM/CSS 等技术细节。",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "帮我看一下 https://the-internet.herokuapp.com/login 这个登录页。我要做同类登录功能，需要你从产品角度分析页面怎么用、校验失败和成功分别是什么表现，以及它和登录后页面的关系。结果保存到 docs/analysis/。",
+      "expected_output": "文档覆盖登录页空态、错误态、成功跳转后的页面；记录交互与状态变化；有用户操作流程图和开发分析依据；截图在 docs/analysis/imgs/；不分析源码或输出选择器。",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "我们要复刻一套后台的列表-筛选-详情体验。请打开 https://demo.opencart.com/admin/ （若需登录用演示站提供的账号），从管理员视角走商品相关页面，梳理列表、筛选、编辑之间的业务关联，输出开发分析依据到 docs/analysis/。",
+      "expected_output": "文档包含多个相关页面截图与功能说明，说清列表与详情/编辑的跳转关系、筛选或操作后的状态变化，以及对应业务场景；路径为 docs/analysis/ 与 docs/analysis/imgs/；无网页技术细节。",
+      "files": []
+    }
+  ]
+}
