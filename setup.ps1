@@ -1,4 +1,4 @@
-# setup.ps1 — 建立 .claude/skills 链接，让 cline 能加载 .cursor/skills 里的 skill
+﻿# setup.ps1 — 建立 .claude/skills 链接，让 cline 能加载 .cursor/skills 里的 skill
 #
 # 用法：
 #   Windows:       powershell -ExecutionPolicy Bypass -File .\setup.ps1
@@ -32,9 +32,16 @@ if (-not (Test-Path $claudeDir)) {
 
 if ($env:OS -eq 'Windows_NT') {
     # Windows：junction，无需管理员权限
-    cmd /c mklink /J "$link" "$target"
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "[错误] 创建链接失败"
+    # PowerShell 5.1 在 $ErrorActionPreference='Stop' 下会把原生命令的 stderr
+    # 当终止性错误（NativeCommandError）中断脚本，导致 mklink 失败，
+    # 因此调用前临时切回 Continue。
+    $savedEAP = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    $null = cmd /c mklink /J "$link" "$target" 2>&1
+    $code = $LASTEXITCODE
+    $ErrorActionPreference = $savedEAP
+    if ($code -ne 0) {
+        Write-Host "[错误] 创建链接失败（退出码 $code）"
         exit 1
     }
 } else {
