@@ -1,0 +1,54 @@
+---
+description: common 依赖必须/按需/禁止，以及登录、权限、导入导出注解。
+globs: "**/pom.xml"
+alwaysApply: false
+---
+
+# common 依赖
+
+本文件只说明 **pom 引哪些 common** 以及 jar 已在时的注解用法。分层总则以 `java-microservice-layer.mdc` 为准；文件上传以 `java-file-upload.mdc` 为准。本文件不覆盖它们。
+
+四档：**必须引入**（脚手架默认写进 pom）、**按需引入**（用到该能力的**同一轮**写入对应 pom，禁止只写代码不引依赖）、**禁止引入**、**推荐用法**（jar 已在时怎么用，不表示默认加 jar）。
+
+能力 common 已有则用对应模块，禁止在业务服务重写，禁止另引同类库绕过 common。Maven / Spring **不会**自动带上按需 jar。
+
+## 必须引入
+
+api：`dlplatform-common-core`、`mybatis-plus-spring`、`dlplatform-common-excel`、`dlplatform-common-sensitive`。
+
+biz：undertow、web、nacos-discovery、nacos-config、`dlplatform-common-data`、`dlplatform-common-security`、`dlplatform-common-xss`、`dlplatform-common-sentinel`、`dlplatform-common-feign`、`dlplatform-common-log`、`dlplatform-common-encrypt-api`、`dlplatform-common-swagger`、本服务 `-api`、`mybatis-plus-spring-boot3-starter`、`druid-spring-boot-3-starter`、`mysql-connector-j`。
+
+原型 pom 注释里的「选配」（swagger / mybatis / druid / mysql）对业务微服务不适用，按上表必须引入。`encrypt-api` 由 Nacos 打开，业务代码不要手写加解密。
+
+## 按需引入
+
+用到该能力的同一轮写入对应 pom，禁止只写代码不引依赖。`dlplatform-common-feign` 加在 **api**（biz 已必须引 feign；api 有 `Remote*` 才加）。
+
+- api `dlplatform-common-feign`：本服务有 `Remote*` 时，并写 `FeignClient.imports`。
+- biz `dlplatform-common-datasource`：本服务内部多数据源。禁止用来共享其他服务的库。
+- biz `dlplatform-common-job`：XXL-JOB。
+- biz `dlplatform-common-sequence`：发号。
+- biz `dlplatform-common-idempotent`：幂等。
+- biz `dlplatform-common-seata`：分布式事务。
+- biz `dlplatform-common-websocket` / `dlplatform-common-sse`：推送。
+
+## 禁止引入
+
+- `dlplatform-common-gateway`、`dlplatform-common-gray`：给网关，不是业务服务。
+- `dlplatform-common-audit`：给 UPMS 审计。
+- 业务服务禁止引 `dlplatform-common-oss`、禁止另引阿里云 OSS SDK 自建上传（仅 UPMS 作为平台文件入口使用 `FileTemplate`）。见 `java-file-upload.mdc`。
+- 其他服务的 `*-biz`。
+- 与 common 能力重复的第三方库（例如不用 EasyExcel 绕过 `common-excel`）。
+
+## 推荐用法
+
+不按管理端 / 买家 / 卖家分模板，按接口属性选用 common 注解：
+
+- 需登录：`@SecurityRequirement(name = HttpHeaders.AUTHORIZATION)`，取当前用户用 `SecurityUtils` / `DlplatformUser`。
+- 公开免登：`@Inner(false)`，不要加 `@SecurityRequirement`。
+- 仅内部 Feign：`@Inner`。
+- 有菜单权限码的接口：`@HasPermission("模块_资源_动作")`。无权限码的 C 端 / B 端接口禁止加。
+- 写操作：`@SysLog("中文操作名")`。
+- 缓存：平台键（验证码、用户、字典等）用 `CacheConstants`；本服务键放 `api/cache`。读写优先 `RedisUtils` / `@Cacheable`。
+- 脱敏：用 `DesensitizedUtils` 或 sensitive 注解，禁止另写打码逻辑。
+- 导入导出：用 `@RequestExcel` / `@ResponseExcel` / `@ExcelProperty`，禁止另引 EasyExcel。

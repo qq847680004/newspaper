@@ -1,0 +1,73 @@
+---
+description: 分层实现：Service、Facade、Mapper、Helper、Client、查库契约。
+globs: "**/service/**/*.java,**/facade/**/*.java,**/mapper/**/*.java,**/support/**/*.java,**/client/**/*.java"
+alwaysApply: false
+---
+
+# 分层实现
+
+本文件只说明 **biz 里怎么写实现**。分层总则以 `java-microservice-layer.mdc` 为准；Controller 以 `java-controller.mdc` 为准；建表以 `java-database.mdc` 为准。本文件不覆盖它们。
+
+## 调用关系
+
+```text
+Controller → Service（单表）或 Facade（跨表写 / 多 Service 流程）
+ServiceImpl → 本表 Mapper（baseMapper 或 XML 方法）
+ServiceImpl → 他表 Service（禁止注入他表 Mapper）
+Service / Facade → Helper（只传已查出的数据）或 Client（第三方 HTTP）
+```
+
+禁止：Controller 调 Mapper / Helper / Client；Helper 调 Mapper / Service / Client / 远程；Client 调 Mapper / Service / Helper；Controller 加 `@Transactional`。
+
+## 中文 Javadoc
+
+`Facade`、`Service`（接口与 Impl）、`Mapper`、`Controller` 的**类本身**必须写中文 Javadoc。`Facade`、`Service`、`Mapper` 的**方法**也必须写。禁止空注释、英文一句、或只写类名/方法名翻译。
+
+- 类：说明职责（Controller 管哪组接口；Service 管哪张表；Facade 编排哪段流程）。
+- 方法：做什么、`@param`、`@return`（无返回值可省略）、有业务异常时 `@throws`。
+- 接口方法写完整；`ServiceImpl` 实现接口方法用 `{@inheritDoc}`；Impl 上新增的有业务语义的方法也要写。
+- Mapper 即使空接口也要有类注释；自定义 SQL 方法必须有方法注释。
+- Controller 类必须有中文类注释（管哪组接口）；方法用 Swagger，不强制方法 Javadoc。
+
+## Mapper
+
+一表一个 Mapper，必须 `@Mapper` 且 `extends DlplatformBaseMapper<本表Entity>`。禁止只继承 MyBatis-Plus 的 `BaseMapper`，禁止 Dao/Repository 命名。
+
+```java
+@Mapper
+public interface FooMapper extends DlplatformBaseMapper<FooEntity> {}
+```
+
+空接口即可。自定义 SQL 方法只加在本接口上，并对应 `resources/mapper/FooMapper.xml`。
+
+## 每表 Service（MyBatis-Plus）
+
+```java
+public interface FooService extends IService<FooEntity> {}
+
+public class FooServiceImpl extends ServiceImpl<FooMapper, FooEntity> implements FooService {}
+```
+
+- 查库优先本表 `ServiceImpl` 的 `baseMapper` / `getById` / `page` / `save` / `lambdaQuery`。能用 MP 方法或调他表 Service 完成的，禁止写 SQL。
+- 分页用 `com.baomidou.mybatisplus.extension.plugins.pagination.Page`（如 `Page<FooEntity>`）+ `page()`/`selectPage`。禁止 `wrapper.last("limit N")` 充当分页。
+- 他表数据：调他表 Service。读侧补字段优先多次 Service + Helper，不要一上来 JOIN。
+- 仅统计、子查询、或多次查询明显吃索引/性能时，才在本表 Mapper 写 SQL。文件：`resources/mapper/本表Mapper.xml`，方法写在本表 Mapper 接口，只由本表 ServiceImpl 调用。
+
+## Facade
+
+跨表**写入**或多 Service 业务流程放 `facade` 包，类名 `*Facade`。无 Mapper。内部只调各表 Service、Helper 装配、第三方 Client。
+
+```java
+@Transactional(rollbackFor = Exception.class)
+public Long create(CreateFooDTO dto) { /* 只调各表 Service */ }
+```
+
+单表写入的 `@Transactional` 放在对应 `ServiceImpl`。
+
+## Helper
+
+纯装配：Entity/DTO → 视图 DTO。无 IO。不要叫 `*Service`。只放 `support` 包，不要和第三方 Client 混放。
+
+## Client
+
+第三方 HTTP（Dify、汇率、GeoIP 等）放 `client` 包，类名 `*Client`。只拼请求、调外部、转成本地对象，不要堆业务编排或落库。不要叫 `*Service` / `*Facade`。不是新业务层，禁止再开 `handler` / `Manager` / `integration` / `adapter`。接口多了按厂商分子包（如 `client/dify/`）。本服务领域里「Client」已表示客户时，包名改用 `external`。平台内其他微服务仍走对方 `-api` 的 `Remote*`，不要为它们写 Client。

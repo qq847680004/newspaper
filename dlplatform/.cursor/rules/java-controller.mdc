@@ -1,0 +1,59 @@
+---
+description: Controller、接口契约、Swagger、出参 R、入参校验。
+globs: "**/controller/**/*.java,**/*Controller.java,**/api/dto/**/*.java,**/api/vo/**/*.java,**/api/query/**/*.java,**/api/feign/**/*.java"
+alwaysApply: false
+---
+
+# Controller 与契约
+
+本文件只说明 **Controller 怎么对外**。分层总则以 `java-microservice-layer.mdc` 为准；登录 / 权限 / 日志注解以 `java-common-deps.mdc` 为准；实现放哪以 `java-layer.mdc` 为准。本文件不覆盖它们。
+
+## Controller Swagger
+
+接口必须用 `io.swagger.v3.oas.annotations`（swagger-annotations-jakarta，当前 2.2.28）写**中文**文档。禁止 springfox `@Api` / `@ApiOperation`。漏注解视为接口未完成。
+
+- 类必须同时具备：`@RestController`、`@RequiredArgsConstructor`、`@Tag(name = "中文模块名", description = "英文短名或补充说明")`。需登录 / 公开 / 内部 Feign / 权限码 / 写操作日志按 `java-common-deps.mdc`「推荐用法」。
+- 方法：`@Operation(summary = "中文接口名")`，必要时补 `description`。
+- 简单入参（`@PathVariable` / `@RequestParam`）：`@Parameter(description = "中文含义")`。
+- 分页入参必须用 `com.baomidou.mybatisplus.extension.plugins.pagination.Page`，写成 `Page<本表Entity> page`（如 `Page<MallAdEntity> page`），加 `@ParameterObject`。禁止自己封装页码对象。
+- 查询/写入入参：Query、DTO、Entity 都可以，按场景选，不必每次都上 Query/DTO；条件简单时直接用 Entity。个别字段更简单时用 `@RequestParam` / `@PathVariable`。禁止 `Map<String,Object>`。
+- 查询对象：`@ParameterObject` + Query 或 Entity 字段 `@Schema(description = "中文")`。
+- Body（DTO 或 Entity）：类与字段都加 `@Schema(description = "中文")`。
+- 出参：Controller 一律 `com.aifw.dlplatform.common.core.util.R`（`R.ok` / `R.failed`）。JSON 出参 VO 和 Entity 对外字段必须中文 `@Schema`。纯 Excel 导出 VO 用 `@ExcelProperty` 即可，不强制 `@Schema`。
+- 必填字段必须校验，中文 `message`：`String` 用 `@NotBlank`，对象/数字用 `@NotNull`，集合用 `@NotEmpty`。写在 Query / DTO / Entity 入参上。
+- Controller 入参必须挂 `@Valid` 或 `@Validated`：`@RequestBody` 用 `@Valid`，`@ParameterObject` / 分组用 `@Validated`。嵌套对象字段也要 `@Valid`。禁止只靠手写 `if` 判空代替注解。
+
+```java
+@RestController
+@RequiredArgsConstructor
+@RequestMapping("/foo")
+@Tag(name = "示例模块", description = "foo")
+@SecurityRequirement(name = HttpHeaders.AUTHORIZATION)
+public class FooController {
+
+	@Operation(summary = "分页查询")
+	@GetMapping("/page")
+	public R page(@ParameterObject Page<FooEntity> page, @ParameterObject FooEntity entity) { ... }
+
+	@Operation(summary = "新建")
+	@PostMapping
+	public R save(@Valid @RequestBody FooEntity entity) { ... }
+}
+```
+
+## 异常与契约
+
+- Service / Facade 抛 `CheckedException`，返回 Entity、DTO 或 VO，**禁止返回 `R`**。
+- Feign 接口允许返回 `R`（平台既有契约，不要改 common 去换掉）。
+- Controller 出参只用 `com.aifw.dlplatform.common.core.util.R`：`return R.ok(data)`。入参可用 `@RequestParam` / `@PathVariable`、Query、DTO 或 Entity，禁止 `Map<String,Object>`。
+- 写操作不要在 Controller 里堆业务。
+
+```java
+// BAD：Controller 注入 Mapper / 返回 Map / Service 返回 R
+fooMapper.insert(entity);
+return R.failed("记录不存在");
+
+// GOOD
+throw new CheckedException("记录不存在");
+return R.ok(fooService.page(page, query));
+```

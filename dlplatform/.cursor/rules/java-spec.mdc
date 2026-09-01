@@ -1,0 +1,39 @@
+---
+description: 写 Spec、/to-spec 产出 spec 时须预先定死与前端及平台对齐的路由、权限码等字面量。
+globs: "**/docs/plans/**/*spec*.md,**/docs/plans/**/*.md"
+alwaysApply: false
+---
+
+# Spec 与前端 / 平台对齐
+
+本文件约束 **`/to-spec` 及手写 Spec**（`docs/plans/*-spec.md`）。分层与 SQL 细则分别见 `java-microservice-layer.mdc`、`java-database.mdc`；本文件不覆盖它们。
+
+## 必写：Frontend & Platform Alignment
+
+Spec 的 **Implementation Decisions** 中必须有独立小节（标题固定为 `Frontend & Platform Alignment` 或并入 Implementation Decisions 下的同级子节），列出**可直接抄进 `sys_menu` SQL 与前端 `views` 的字面量**。禁止写「待定」「后续与前端对齐」「按惯例」却不给值。
+
+有管理端页面或已定义 `@HasPermission` 的功能，以下项**全部定死**；缺任一项视为 Spec 未完成：
+
+| 项 | 须写明的值 | 用途 |
+|---|---|---|
+| 网关路由 | `route_id`、`Path`（如 `/inquiry/**`）、`uri`（如 `lb://dlplatform-inquiry-biz`） | `sys_route_conf` / `*_gateway.sql` |
+| 菜单顶级 | 中文名、`path`（如 `/inquiry`）、`component`（顶级为 `NULL`） | `sys_menu` 目录 |
+| 菜单页面 | 中文名、`path`、`component`（默认同值） | 前端动态路由 + `sys_menu` |
+| 按钮权限 | 完整权限码字符串及用途（如 `inquiry_inquiry_view` = 读/导出） | `@HasPermission` + `sys_menu.permission` |
+| HTTP 前缀 | 网关前缀（如 `/inquiry`）及与第 6 节接口 path 的关系 | 前端 axios 基路径 |
+| 导航层级 | 顶部模块 → 左侧菜单 → 页面标题（中文） | 产品 / 前端 IA |
+
+菜单 `path` / `component` 须遵守 `java-database.mdc`「后台菜单 path / component 规范」（单页模块 `/{prefix}/index`，禁止 `management` 等泛化段）。
+
+## 写法要求
+
+- 用**表格或固定字段列表**，每行一个最终值，不要 prose 里散落、不要多处不一致。
+- 权限码命名与仓库既有模块一致：`{模块}_{资源}_{动作}`（如 `order_air_export_view`）。
+- API 契约（第 6 节）里引用的权限码，必须与上表**同一字符串**。
+- 即使 **Out of Scope** 写了「前端页面本轮不实现」，只要后台接口要联调或要落 `*_menu.sql`，菜单 path 与权限码仍须在 Spec 定死；仅纯内部脚本、无管理端入口时可省略菜单页。
+
+## /to-spec 流程
+
+1. 探索 repo 时对照已有模块的 `sys_route_conf`、`sys_menu` 与同服务 `resources/db/*_menu.sql`，沿用命名风格。
+2. 写 Spec 前先 Read 本文件与 `java-database.mdc`（菜单 path 规范）。
+3. 产出 Spec 后自检：`Frontend & Platform Alignment` 是否可被前端与 `*_menu.sql` 直接消费，无需二次猜值。

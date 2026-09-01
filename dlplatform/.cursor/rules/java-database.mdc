@@ -1,0 +1,79 @@
+---
+description: 新建库表：库名、雪花主键、审计字段、索引、Entity 映射。
+globs: "**/*.sql,**/entity/**/*.java,**/resources/db/**"
+alwaysApply: false
+---
+
+# 数据库
+
+本文件只约束**新建库表**。分层总则以 `java-microservice-layer.mdc` 为准；Mapper / Service 查库以 `java-layer.mdc` 为准。本文件不覆盖它们。
+
+基线：`dlplatformx_mall` + `mall_order` / `mall_schema.sql`。
+
+- 库名：`dlplatformx_<name>`。库默认 `utf8mb4` / `utf8mb4_unicode_ci`，列不要再写一遍字符集。
+- 表名：`<name>_` + 蛇形，如 `mall_order`。多语言子表 `<主表>_i18n`，`(主表id, lang)` 唯一，`lang` 为 `cn`/`en`/`fr`。
+- 引擎：`ENGINE=InnoDB`，表和**每一列**必须有可读中文 `COMMENT`，禁止 `???`、乱码。脚本 `SET NAMES utf8mb4`，放 `resources/db/`。
+- 主键：`id bigint NOT NULL`，**禁止自增**。Entity `@TableId(type = IdType.ASSIGN_ID)`（雪花）。
+- 禁止数据库外键，关联由 Service 保证。可选关联用 `bigint NOT NULL DEFAULT 0` 表示无（如 `inquiry_id`）。
+- 每张业务表必须有：`create_by`、`create_time`、`update_by`、`update_time`、`del_flag`（`del_flag char(1) DEFAULT '0'`，0 未删 / 1 已删）。Entity：`@TableLogic`；审计时间/人用 `@TableField(fill = …)`。
+- `tenant_id`、`dept_id` **按需**：需要租户隔离才加 `tenant_id` + Entity `@TenantTable`；需要管理端按部门/本人控权才加 `dept_id`，查询显式传 `DataScope`。i18n、从表、平台基础资料（国家/类目等）默认不加 `dept_id`。不要为「看起来齐」而两列都加。
+- 当前用户自己的数据：表上留归属列（如 `buyer_id` / `seller_id`），查询绑 `SecurityUtils.getUser().getId()`（卖家用已有解析到业务主键的工具）。禁止用 OAuth `client_id` 当登录人。平台不会按用户 id 自动拼 SQL。
+- 状态、开关用 `tinyint`，取值写进列注释（如 `order_status`、`aftersales_flag`）。金额 `decimal(18,2)`，单价/数量 `decimal(18,4)`。时间用 `datetime`。
+- 单据、成交类把当时名称/金额/地址打**快照**（`goods_name`、`buyer_name`、`ship_*`），不要只存 ID。主数据展示名走 i18n 子表，不要在主表堆语种列。
+- 业务编号 `UNIQUE`（如 `uk_mo_no`）。普通索引 `idx_<表缩写>_<字段>`，只建查询用到的，禁止重复索引（`mall_order` 上 `idx_mo_seller` 与 `idx_mo_seller_time` 同列，不要学）。
+- Entity：`@TableName` 与表名一致；字段驼峰对应蛇形列。
+
+## SQL 脚本清单（必补全并执行）
+
+建库、建表或交付一个**可访问的管理端功能**时，不能只写业务表 DDL。按 Spec / ticket 把**当前功能需要的全部 SQL** 写到 `resources/db/`，并在本地 dev 环境**实际执行**；缺任一类视为未完成。
+
+### 两个库，不要混
+
+| 库 | 脚本内容 |
+|---|---|
+| `dlplatformx_<name>` | 本服务业务表：`CREATE DATABASE` / `CREATE TABLE` / `ALTER TABLE` |
+| `dlplatformx`（UPMS 平台库） | 网关路由、后台菜单、角色菜单绑定 |
+
+业务脚本连业务库执行；平台脚本连 `dlplatformx` 执行。禁止把 `sys_route_conf` / `sys_menu` 写进业务库。
+
+### 当前功能应有哪些脚本
+
+按 Scope 逐项补齐，能合并的放同一文件，但内容不能缺：
+
+1. **业务表** — `<name>_schema.sql` 或 `<feature>_alter.sql`：本服务库 DDL，`SET NAMES utf8mb4`，幂等（`IF NOT EXISTS` / 可重复执行的 `ALTER`）。
+2. **网关路由** — 新建微服务用 `<name>_gateway.sql`；已有服务的新模块可写在 `<feature>_menu.sql` 开头。向 `sys_route_conf` 插入 `Path` → `lb://dlplatform-<name>-biz`，`route_id=dlplatform-<name>`，须 `WHERE NOT EXISTS` 幂等。
+3. **后台菜单** — Spec 有管理端页面或已定义 `@HasPermission` 权限码时必写。向 `sys_menu` 插入：目录/页面（`path`、`component`、`parent_id`）+ 按钮（`permission` 与 Controller 一致，如 `inquiry_inquiry_view/add/edit`）。`menu_id` 用雪花级 `bigint`，禁止自增依赖；须幂等（`WHERE NOT EXISTS (permission=…)` 或 `ON DUPLICATE KEY UPDATE`）。
+4. **角色授权** — 向 `sys_role_menu` 把新 `menu_id` 绑到默认管理员角色（通常 `role_id=1`），含父级目录 id；须幂等（`INSERT IGNORE` 或 `NOT EXISTS`）。
+5. **其它平台数据** — Spec / ticket 明确要求的数据字典、参数、租户初始化等，同样写脚本并执行。
+
+Spec 写「前端页面不在本轮」时，仍若已定义权限码且接口要联调，至少补按钮级 `sys_menu` + `sys_role_menu`，或 ticket 里明确标注「菜单后续补」并说明原因；不得 silently 遗漏。
+
+### 命名与放置
+
+- 网关专用：`<name>_gateway.sql`（不要用 `_route` 后缀，避免和菜单脚本混淆）。
+- 功能菜单：`<feature>_menu.sql` 或 `<feature>_menu_route.sql`（可含 gateway + menu + role_menu）。
+- 全部放在当前服务 `dlplatform-<name>-biz/src/main/resources/db/`。
+
+### 后台菜单 path / component 规范
+
+`sys_menu.path` 与 `sys_menu.component` 供管理端动态路由使用，须与仓库既有模块一致：
+
+- **顶级模块**：`/{prefix}`，与网关前缀一致（如 `/inquiry`、`/order`、`/counterparty`）；`component` 为 `NULL`。
+- **叶子页面**：英文业务域 + 功能名 + `/index`（如 `/order/air/export/index`、`/counterparty/customer/group/index`、`/masterdata/port/index`）。`path` 与 `component` 默认同值；少数页面可 `path` 不带 `/index`、`component` 带 `/index`。
+- **禁止**用 `management`、`admin` 等泛化英文段代替业务名（仓库无此先例）。
+- **单页模块**（顶级下只有一个页面）：用 `/{prefix}/index`（如询价管理 → `/inquiry/index`），不要叠 `/{prefix}/management/index`。
+- 多页同级时再扩：`/{prefix}/workbench/index`、`/{prefix}/overview/index` 等业务词，不要用中文拼音。
+
+示例：`dlplatform-inquiry` 网关 `/inquiry/**`，菜单顶级 `/inquiry`，「询价管理」页面 `/inquiry/index`。
+
+### 执行与生效
+
+- 本地 dev：脚本写完后**立即执行**（如 `mysql … dlplatformx_<name>` / `dlplatformx`），并在回复或 ticket 中说明已执行哪些文件。
+- `sys_route_conf` 写入后：重启 **UPMS** 或在「路由管理」保存一次，刷新 Redis 路由缓存；只重启 Gateway 不够。
+- `sys_menu` / `sys_role_menu` 写入后：重新登录或刷新权限缓存后，后台左侧菜单与按钮权限才可见。
+
+### 验收
+
+- 业务库：表存在、列注释完整、索引与 Spec 一致。
+- 平台库：`sys_route_conf` 能查到本服务路由；网关 `/{prefix}/**` 不再 404。
+- 有菜单 Scope 时：`sys_menu.permission` 与接口权限码一致；管理员角色能在后台看到入口与按钮。

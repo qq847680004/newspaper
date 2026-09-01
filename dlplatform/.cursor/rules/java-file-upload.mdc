@@ -1,0 +1,16 @@
+---
+description: 业务文件上传走 UPMS OSS，禁止自建存储和 common-oss。
+alwaysApply: false
+---
+
+# 文件上传
+
+本文件只说明业务服务怎么存文件。分层总则以 `java-microservice-layer.mdc` 为准；选 UPMS / Feign 以 `project-directory.mdc` 为准。本文件不覆盖它们。
+
+要落库、要回看、要给前端 url 的文件（凭证、附件、图片等）一律走 UPMS 已有 OSS 上传，不要在业务服务自建存储、不要直连阿里云。存储后端由 UPMS 的 `file.oss` / `file.local` 决定，业务服务不配 oss。
+
+- 前端直传：网关 `POST /admin/sys-file/upload`（UPMS `SysFileController`）。
+- 本服务收到 `MultipartFile` 再存：注入 upms-api 的 `RemoteFileService.innerUpload`，把返回 url 写入本表。禁止依赖 `upms-biz`。
+- 禁止为本服务加 `dlplatform-common-oss` 调 `FileTemplate`，禁止把业务目录当 OSS。
+
+仅当文件是**过渡态、用完即丢**：中间抽取信息、转成流再交给下游、不落本表 url、不进 `sys_file`。此时用 Servlet 上传落到的本地临时文件（或 `Files.createTempFile`），`try/finally` 用完即删。禁止把临时转发做成业务上传目录，禁止用临时路径冒充已上传文件。

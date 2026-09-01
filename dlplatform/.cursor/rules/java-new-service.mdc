@@ -1,0 +1,97 @@
+---
+description: 新建微服务脚手架：目录、-api/-biz、独立库、注册、网关。
+alwaysApply: false
+---
+
+# 新建微服务
+
+本文件只说明**搭新服务到可运行**。分层总则以 `java-microservice-layer.mdc` 为准；common 依赖以 `java-common-deps.mdc` 为准；建表以 `java-database.mdc` 为准。本文件不覆盖它们。
+
+未完成下列任一项，视为未搭完，禁止只丢空目录。
+
+## 目录
+
+```text
+dlplatform-<name>/
+  pom.xml                         # parent=dlplatform，packaging=pom，version 与根 pom 一致
+  dlplatform-<name>-api/
+    pom.xml
+    .../api/entity/
+    .../api/dto/
+    .../api/query/                # 入参
+    .../api/vo/                   # 列表/导出视图，按需
+    .../api/feign/
+    .../api/enums/                # 错误码、枚举，按需
+    .../api/constant/             # 按需
+    .../api/cache/                # 缓存注解/键，按需
+    .../api/util/                 # 跨模块可复用工具，按需
+    resources/META-INF/spring/org.springframework.cloud.openfeign.FeignClient.imports  # 有 Feign 时
+    resources/i18n/               # messages_zh_CN.properties 等，按需
+  dlplatform-<name>-biz/
+    pom.xml
+    Dockerfile                    # EXPOSE 与 application.yml 端口一致
+    .../<pkg>/Dlplatform<Name>Application.java
+    .../<pkg>/controller/
+    .../<pkg>/facade/             # *Facade，跨表编排
+    .../<pkg>/service/ + impl/
+    .../<pkg>/mapper/             # @Mapper + DlplatformBaseMapper
+    .../<pkg>/support/            # *Helper，纯装配无 IO；不要再建 handler
+    .../<pkg>/client/             # 第三方 *Client（Dify 等）；不是新业务层。本服务「Client」已表示客户时改用 external
+    resources/application.yml
+    resources/logback-spring.xml
+    resources/mapper/             # *Mapper.xml（按需）
+    resources/db/<name>_schema.sql    # 业务库 DDL
+    resources/db/<name>_gateway.sql # 平台库 sys_route_conf
+    resources/db/<name>_menu.sql      # 平台库 sys_menu + sys_role_menu（有管理端页面/权限码时）
+```
+
+## Maven
+
+- 根 `pom.xml` 增加 `<module>dlplatform-<name></module>`。
+- 聚合 pom：`parent=dlplatform`，`modules` 含 `-api`、`-biz`。
+- api / biz 的 common 依赖按 `java-common-deps.mdc` 必须引入 / 按需引入，禁止把按需项抄进脚手架默认 pom。
+- biz 的 `cloud` profile（默认激活）配置 `spring-boot-maven-plugin` repackage。
+- `dlplatform-common-bom` 增加本服务 `-api` 的 dependencyManagement。
+- 有 Feign 接口时，`FeignClient.imports` 每行写一个全限定类名，否则其他服务扫不到本服务 Feign。
+- `Dockerfile`：`EXPOSE` 与 `application.yml` 端口一致；`ADD ./target/dlplatform-<name>-biz.jar`。
+
+## 启动与本地配置
+
+- 启动类注解：`@SpringBootApplication` `@EnableDiscoveryClient` `@EnableDlplatformResourceServer` `@EnableDlplatformFeignClients` `@EnableOpenApi("<pkg>")`。不要无故加 `@MapperScan`（会关掉 `@Mapper` 自动扫描）。
+- `spring.application.name` 必须是 `@artifactId@`（即 `dlplatform-<name>-biz`），与 Nacos 服务名、Feign、网关 `lb://` 一致。
+- `application.yml` 只放端口与 Nacos 接入，数据源/Redis/安全等走配置中心，不要在本地写库账号：
+
+```yaml
+server:
+  port: <未占用端口，业务服务用 70xx>
+spring:
+  application:
+    name: @artifactId@
+  cloud:
+    nacos:
+      username: @nacos.username@
+      password: @nacos.password@
+      discovery:
+        server-addr: ${NACOS_HOST:dlplatform-register}:${NACOS_PORT:8848}
+      config:
+        server-addr: ${spring.cloud.nacos.discovery.server-addr}
+  config:
+    import:
+      - optional:nacos:application-@profiles.active@.yml
+      - optional:nacos:${spring.application.name}-@profiles.active@.yml
+```
+
+- 端口不得与现有服务冲突。`logback-spring.xml` 必须有，`log.path` 用 `logs/${project.artifactId}`。
+
+## Nacos / 网关 / 常量
+
+- Nacos 创建 DataId：`dlplatform-<name>-biz-@profiles.active@.yml`（dev 即 `dlplatform-<name>-biz-dev.yml`）。共享项已在 `application-{profile}.yml`；本服务库名、个性化配置写在该 DataId。未发布此配置且本地无数据源时，服务起不来。
+- 一服务一库：每个业务微服务独立数据库，禁止共用其他服务的库。新建服务必须先建新库，库名 `dlplatformx_<name>`（如 `dlplatformx_mall`），写入本服务 Nacos DataId；未建库视为未搭完。
+- `ServiceNameConstants` 增加常量，值为 `dlplatform-<name>-biz`。
+- `resources/db/<name>_schema.sql`（业务库 DDL）+ `<name>_gateway.sql`（平台库 `sys_route_conf`）为脚手架最低集；写完后按 `java-database.mdc`「SQL 脚本清单」在本地**执行**。Spec 已有管理端页面/权限码时，同轮补 `<name>_menu.sql`（`sys_menu` + `sys_role_menu`），一并执行。`db/` 里其它脚本可任意命名，网关脚本不要用 `_route` 后缀。
+
+## 验收
+
+- `mvn -pl dlplatform-<name>/dlplatform-<name>-biz -am -DskipTests package` 通过。
+- 能向 Nacos 注册名为 `dlplatform-<name>-biz` 的实例；经网关 `{prefix}` 能打到本服务 Controller。
+- 业务库、网关路由 SQL 已执行；有菜单 Scope 时菜单/角色 SQL 已执行且后台可见。

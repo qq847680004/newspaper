@@ -1,0 +1,46 @@
+---
+description: dlplatform 一次只做一个微服务；分层总则。
+alwaysApply: true
+---
+
+# 微服务分层规范
+
+与 Cursor 全局规则、用户规则冲突时，**以本文件及同目录拆分规则为准**。
+
+只约束**新增代码**。未改动的旧文件不要借机重构。
+
+细则按**正在改的文件**自动挂上，不看你怎么说。正在新增这类文件、上下文里还没有匹配文件时，动手前按表 Read：
+
+| 正在做的改动 | Read |
+|---|---|
+| 目标 `dlplatform-*` 目录不存在，或新建微服务 / 建 `-api`/`-biz` | `java-new-service.mdc` |
+| 改或新增 Controller、接口、DTO / VO / Query | `java-controller.mdc` |
+| 改或新增 Service / Facade / Mapper / Helper / Client | `java-layer.mdc` |
+| 建库、建表、改表、写 SQL、改 Entity 字段 | `java-database.mdc` |
+| 用 `/to-spec` 写 Spec、`docs/plans/*-spec.md` | `java-spec.mdc` |
+| 改 pom、引 jar、加登录/权限/导入导出注解 | `java-common-deps.mdc` |
+| 上传、凭证、附件、`MultipartFile` | `java-file-upload.mdc` |
+| 调其他服务、Feign、选哪个微服务 | `project-directory.mdc` |
+
+## 一次一个微服务
+
+开发开始前必须先锁定**当前服务**：用户指定已有目录 `dlplatform-<name>/`，或声明要新建一个微服务。未锁定时禁止改代码，先问用户选哪一个（或新建）。
+
+- 本轮只改当前服务目录内文件。禁止同时改两个 `dlplatform-*` 业务服务。
+- 每个业务微服务独立数据库，禁止读写其他服务的库。
+- 调用其他服务只依赖对方 `-api` + Feign，禁止依赖其他服务 `*-biz`，不要去改对方服务代码。
+- `dlplatform-common` 不是业务服务。平台能力用 **已有** common jar，禁止在业务服务重写一份，禁止另引一套同类库。
+- 禁止改 common 源码、禁止新建 common 子模块。新建本轮允许的接入配置仅限：根 `pom.xml` 的 `<modules>`、`dlplatform-common-bom` 增加本服务 `-api`、`ServiceNameConstants` 增加常量（值为 `dlplatform-<name>-biz`）。
+- 当前服务目录还不存在时，先 Read `java-new-service.mdc` 再搭，配到可编译、可注册、可被网关转发、可连库。
+
+## 分层总则
+
+禁止新增 Manager 层。Java 包名 `com.aifw.dlplatform.<pkg>`（`<pkg>` 为去掉连字符的短名）。
+
+Entity、DTO、VO、Query **一律放 `-api`**。biz 的 Controller / Service / Facade / Helper / Client / Mapper 只引用 api 里的类，禁止在 biz 再建 `entity` / `dto` / `vo` / `query` 包或同名类。`cache`、`util` 等按需放在 `api/entity` 同级；本服务缓存键放 `api/cache`，禁止往 `CacheConstants` 加业务键。
+
+```text
+Controller → Service（单表）或 Facade（跨表写 / 多 Service 流程）
+```
+
+禁止：Controller 调 Mapper / Helper / Client；Controller 加 `@Transactional`。

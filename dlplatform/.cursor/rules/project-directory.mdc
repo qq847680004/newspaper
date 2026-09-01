@@ -1,0 +1,58 @@
+---
+description: 跨服务选哪个微服务、到对方 -api 找 Feign。
+globs: "**/feign/**/*.java,**/*Remote*.java"
+alwaysApply: false
+---
+
+# 项目目录
+
+本文件只说明仓库结构和「调哪个服务」。分层总则以 `java-microservice-layer.mdc` 为准；新建脚手架见 `java-new-service.mdc`；依赖见 `java-common-deps.mdc`。本文件不覆盖它们。
+
+## 跨服务怎么调
+
+1. 按下表按**领域**选定 `dlplatform-<name>`（不要猜、不要扫全仓 Controller）。
+2. 到对方 `dlplatform-<name>/dlplatform-<name>-api/` 下找 Feign：路径通常是 `.../api/feign/Remote*.java`；也可在该 `-api` 内搜 `@FeignClient`。
+3. 本服务 **pom 只加对方 `-api`**，注入已有 `Remote*`。禁止依赖对方 `*-biz`，禁止在本服务里给对方 Controller 新写一份 Feign。
+4. `@FeignClient` 的 `value` 用 `ServiceNameConstants` 已有常量；没有常量时按 `dlplatform-<name>-biz`（`auth` 例外：`dlplatform-auth`）。
+5. 对方 `-api` 里没有可用的 `Remote*`：停止，告知用户需要对方服务补 Feign（本轮禁止改对方代码）。
+
+特例：UPMS 的 Java 包是 `com.aifw.dlplatform.admin`，Feign 在 `admin.api.feign`，不是包名 `upms`。Token 相关接口也放在 upms-api，指向 auth。
+
+## 基础设施（不是业务 Feign 目标）
+
+| 目录 | 作用 |
+|---|---|
+| `dlplatform-register` | Nacos |
+| `dlplatform-gateway` | 网关 |
+| `dlplatform-common` | 平台能力 jar，按分层规范引用，不要当业务服务调 |
+| `dlplatform-visual` | 代码生成 / 报表 / 支付 / 公众号 / 监控 / 定时任务，一般不作为业务 Feign 目标 |
+| `dlplatform-boot`、`dlplatform-mall-seller-boot` | 单体聚合启动，不是可调用微服务 |
+| `dlplatform-pafmall` | 未进根 `pom` modules 的独立工程，开发业务微服务时忽略 |
+
+## 业务服务（按领域选）
+
+Nacos 名即 Feign `value`。常量在 `ServiceNameConstants`。
+
+| 目录 | 常量 / Nacos | 调它当需要 |
+|---|---|---|
+| `dlplatform-auth` | `AUTH_SERVICE` → `dlplatform-auth` | 登录、发 token、验证码 |
+| `dlplatform-upms` | `UPMS_SERVICE` → `dlplatform-upms-biz` | 后台用户 / 角色 / 菜单 / 部门 / 租户 / 字典 / 文件 / 日志 / 网关路由 / 消息 |
+| `dlplatform-app-server` | `APP_SERVER` → `dlplatform-app-server-biz` | App 用户、社交登录、文章、页面、Tabbar |
+| `dlplatform-flow` | `FLOW_SERVER` → `dlplatform-flow-biz` | 审批流、流程实例、待办任务 |
+| `dlplatform-masterdata` | `MASTERDATA_SERVICE` → `dlplatform-masterdata-biz` | 物流主数据：港口 / 仓库 / 航线 / 方案 / 节点 / 币种 / 税率 / 车型 |
+| `dlplatform-counterparty` | `COUNTERPARTY_SERVICE` → `dlplatform-counterparty-biz` | 客户 / 供应商 / 合同 / 授信 / 分支机构 |
+| `dlplatform-settlement` | `SETTLEMENT_SERVICE` → `dlplatform-settlement-biz` | 财务结算：法人主体 / 费用项 / 发票 / 往来单位 |
+| `dlplatform-order` | `ORDER_SERVICE` → `dlplatform-order-biz` | **物流订单**（空运进出口、包裹），不是商城订单 |
+| `dlplatform-mall` | （无常量）`dlplatform-mall-biz` | **商城运营后台**：商品 / 店铺 / 卖家审核 / 买家 / 商城订单售后 / 汇率广告类目 |
+| `dlplatform-mall-buyer` | `MALL_BUYER_SERVICE` → `dlplatform-mall-buyer-biz` | **买家端**：买家用户、购物车、询盘、商城订单、收藏、地址 |
+| `dlplatform-mall-seller` | （无常量）`dlplatform-mall-seller-biz` | **卖家端**：入驻、店铺、商品、询盘报价、发货、售后 |
+
+业务服务标准结构：`dlplatform-<name>/{ -api, -biz }`。`-api` 给别人调；`-biz` 只给本服务实现。
+
+## 易混
+
+- 商城订单 / 商品 / 店铺 → `mall`（后台）或 `mall-buyer` / `mall-seller`（端侧），**不是** `order`。
+- 物流空运单 / 运单节点 / 报关 → `order`。
+- 后台账号权限 → `upms`；买家账号 → `mall-buyer`；App 账号 → `app-server`。
+- 商城汇率 → `mall`；物流主数据币种/税率 → `masterdata`。
+- 客户供应商 → `counterparty`；结算法人/发票 → `settlement`。
